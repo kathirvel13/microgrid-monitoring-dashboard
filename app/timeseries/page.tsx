@@ -1,695 +1,206 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-
-import {
-  Download,
-  RefreshCw,
-} from "lucide-react"
-
-import {
-  Sidebar,
-} from "@/components/layout/sidebar"
-
-import {
-  Header,
-} from "@/components/layout/header"
-
-import {
-  Button,
-} from "@/components/ui/button"
-
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts"
-
-const CHANNEL_ID = "3381514"
-
-const READ_API_KEY =
-  "EDYFCLXDV0XTCEV8"
-
-const timeRanges = [
-  {
-    label: "1H",
-    hours: 1,
-    results: 240,
-  },
-
-  {
-    label: "6H",
-    hours: 6,
-    results: 1440,
-  },
-
-  {
-    label: "24H",
-    hours: 24,
-    results: 4000,
-  },
-
-  {
-    label: "7D",
-    hours: 168,
-    results: 8000,
-  },
-
-  {
-    label: "30D",
-    hours: 720,
-    results: 8000,
-  },
-]
-
-interface BatteryPoint {
-
-  time: string
-
-  fullDate: string
-
-  timestamp: number
-
-  voltage: number
-
-  soc: number
-
-  soh: number
-}
+import { useState, useEffect } from "react"
+import { Download, RefreshCw, WifiOff, Cloud } from "lucide-react"
+import { Sidebar } from "@/components/layout/sidebar"
+import { Header } from "@/components/layout/header"
+import { Button } from "@/components/ui/button"
+import { TimeSeriesChart } from "@/components/charts/time-series-chart"
+import { useEnergyStore } from "@/lib/energy-store"
+import { useThingSpeak } from "@/hooks/use-thingspeak"
 
 export default function TimeSeriesPage() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const { historicalData, connection } = useEnergyStore()
+  
+  // Fetch from ThingSpeak (both AC and DC channels)
+  const { isLoading, refresh, acChannel, dcChannel } = useThingSpeak(100)
 
-  const [
-    isSidebarOpen,
-    setIsSidebarOpen,
-  ] = useState(false)
-
-  const [
-    selectedRange,
-    setSelectedRange,
-  ] = useState(24)
-
-  const [
-    history,
-    setHistory,
-  ] = useState<BatteryPoint[]>([])
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false)
-
-  // Fetch ThingSpeak Data
-  const fetchThingSpeakData =
-    async () => {
-
-      try {
-
-        setLoading(true)
-
-        const range =
-          timeRanges.find(
-            (r) =>
-              r.hours ===
-              selectedRange
-          )
-
-        if (!range) return
-
-        let url = ""
-
-        // 1H & 6H
-        if (
-          selectedRange <= 6
-        ) {
-
-          url =
-            `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?api_key=${READ_API_KEY}&results=${range.results}`
-
-        } else {
-
-          // 24H / 7D / 30D
-          const days =
-            selectedRange / 24
-
-          url =
-            `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?api_key=${READ_API_KEY}&days=${days}`
-        }
-
-        const response =
-          await fetch(url)
-
-        const data =
-          await response.json()
-
-        const formatted =
-          data.feeds.map(
-            (item: any) => {
-
-              const date =
-                new Date(
-                  item.created_at
-                )
-
-              return {
-
-                time:
-                  selectedRange >=
-                  168
-                    ? date.toLocaleDateString()
-                    : date.toLocaleTimeString(),
-
-                fullDate:
-                  date.toLocaleString(),
-
-                timestamp:
-                  date.getTime(),
-
-                voltage: Number(
-                  item.field1 || 0
-                ),
-
-                soc: Number(
-                  item.field4 || 0
-                ),
-
-                soh: Number(
-                  item.field5 || 0
-                ),
-              }
-            }
-          )
-
-        setHistory(formatted)
-
-      } catch (err) {
-
-        console.log(
-          "ThingSpeak Fetch Error:",
-          err
-        )
-
-      } finally {
-
-        setLoading(false)
-      }
-    }
-
-  // Auto Fetch
   useEffect(() => {
+    setMounted(true)
+  }, [])
 
-    fetchThingSpeakData()
-
-  }, [selectedRange])
-
-  // Auto Refresh Every 15s
-  useEffect(() => {
-
-    const interval =
-      setInterval(
-        fetchThingSpeakData,
-        15000
-      )
-
-    return () =>
-      clearInterval(interval)
-
-  }, [selectedRange])
-
-  // Downsampling
-  const filteredHistory =
-    useMemo(() => {
-
-      let filtered = history
-
-      if (
-        selectedRange >= 720
-      ) {
-
-        filtered =
-          filtered.filter(
-            (_, index) =>
-              index % 20 === 0
-          )
-
-      } else if (
-        selectedRange >= 168
-      ) {
-
-        filtered =
-          filtered.filter(
-            (_, index) =>
-              index % 8 === 0
-          )
-
-      } else if (
-        selectedRange >= 24
-      ) {
-
-        filtered =
-          filtered.filter(
-            (_, index) =>
-              index % 3 === 0
-          )
-      }
-
-      return filtered
-
-    }, [history, selectedRange])
-
-  // CSV Export
   const exportCSV = () => {
+    if (historicalData.length === 0) return
 
-    if (
-      filteredHistory.length === 0
-    ) {
-      alert(
-        "No data available"
-      )
-      return
-    }
+    const headers = ["Timestamp", "DC Voltage", "DC Current", "DC Power", "DC Energy", "AC1 Voltage", "AC1 Current", "AC1 Power", "AC1 Energy", "AC2 Voltage", "AC2 Current", "AC2 Power", "AC2 Energy"]
+    const rows = historicalData.map((d) => [
+      d.timestamp,
+      d.dcVoltage,
+      d.dcCurrent,
+      d.dcPower,
+      d.dcEnergy,
+      d.ac1Voltage,
+      d.ac1Current,
+      d.ac1Power,
+      d.ac1Energy,
+      d.ac2Voltage,
+      d.ac2Current,
+      d.ac2Power,
+      d.ac2Energy,
+    ])
 
-    const headers =
-      "Date Time,Voltage,SOC,SOH\n"
-
-    const rows =
-      filteredHistory
-        .map(
-          (item) =>
-            `${item.fullDate},${item.voltage},${item.soc},${item.soh}`
-        )
-        .join("\n")
-
-    const csvContent =
-      headers + rows
-
-    const blob = new Blob(
-      [csvContent],
-      {
-        type:
-          "text/csv;charset=utf-8;",
-      }
-    )
-
-    const url =
-      window.URL.createObjectURL(
-        blob
-      )
-
-    const link =
-      document.createElement(
-        "a"
-      )
-
-    link.href = url
-
-    link.download =
-      `battery-history-${selectedRange}h.csv`
-
-    link.click()
-
-    window.URL.revokeObjectURL(
-      url
-    )
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `energy-data-${new Date().toISOString().split("T")[0]}.csv`
+    a.click()
   }
 
   return (
     <div className="min-h-screen bg-background">
-
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={() =>
-          setIsSidebarOpen(false)
-        }
-      />
-
-      <Header
-        onMenuClick={() =>
-          setIsSidebarOpen(true)
-        }
-      />
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <Header onMenuClick={() => setIsSidebarOpen(true)} />
 
       <main className="pt-16 lg:ml-64">
-
         <div className="p-4 md:p-6">
-
           {/* Header */}
-          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
+          <div className="mb-4 flex flex-col gap-4 md:mb-6 md:flex-row md:items-center md:justify-between">
             <div>
-
               <h1 className="text-xl font-bold uppercase tracking-wider text-foreground md:text-2xl">
-                Time Series Analysis
+                Historical Data
               </h1>
-
               <p className="text-xs text-muted-foreground md:text-sm">
-                Historical Battery Analytics
+                {connection.thingspeak ? (
+                  <span className="flex items-center gap-1 text-secondary">
+                    <Cloud className="h-3 w-3" />
+                    Data from ThingSpeak (AC: #{acChannel?.id ?? "3387437"}, DC: #{dcChannel?.id ?? "3387439"})
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <WifiOff className="h-3 w-3" />
+                    ThingSpeak not connected
+                  </span>
+                )}
               </p>
-
             </div>
-
-            <div className="flex gap-2">
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={
-                  fetchThingSpeakData
-                }
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-
-                Refresh
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportCSV}
-              >
-                <Download className="mr-2 h-4 w-4" />
-
-                Export CSV
-              </Button>
-
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${connection.thingspeak ? "animate-pulse bg-secondary" : "bg-muted-foreground"}`} />
+              <span className="text-sm text-muted-foreground">
+                {connection.thingspeak ? "ThingSpeak Connected" : "ThingSpeak Offline"}
+              </span>
             </div>
           </div>
+
+          {/* No Data Warning */}
+          {!connection.thingspeak && historicalData.length === 0 && (
+            <div className="mb-6 flex items-center gap-3 border border-muted/50 bg-muted/10 px-4 py-3">
+              <WifiOff className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">No Historical Data Available</p>
+                <p className="text-xs text-muted-foreground">
+                  ThingSpeak data will appear here once your hardware starts sending data.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Controls */}
-          <div className="mb-6 border border-border bg-card p-4">
-
-            <p className="mb-2 text-[10px] uppercase text-muted-foreground">
-              Time Range
-            </p>
-
-            <div className="flex flex-wrap gap-2">
-
-              {timeRanges.map(
-                (range) => (
-
-                  <Button
-                    key={
-                      range.hours
-                    }
-
-                    size="sm"
-
-                    variant={
-                      selectedRange ===
-                      range.hours
-                        ? "default"
-                        : "outline"
-                    }
-
-                    onClick={() =>
-                      setSelectedRange(
-                        range.hours
-                      )
-                    }
-                  >
-                    {range.label}
-                  </Button>
-                )
-              )}
-
+          <div className="mb-4 border border-border bg-card p-4 md:mb-6">
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Data Controls
+            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={() => refresh()} disabled={isLoading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                Refresh Data
+              </Button>
+              <Button variant="outline" onClick={exportCSV} disabled={historicalData.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {historicalData.length} data points loaded
+              </span>
             </div>
           </div>
 
-          {/* VOLTAGE GRAPH */}
-          <div className="mb-6 border border-border bg-card p-4 md:p-6">
+          {/* Charts */}
+          <div className="space-y-4 md:space-y-6">
+            {/* DC Power Chart */}
+            <div className="border border-border bg-card p-4 md:p-6">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground md:mb-6 md:text-sm">
+                DC / Battery Power
+              </h3>
+              <TimeSeriesChart dataKey="dcPower" />
+            </div>
 
-            <div className="mb-4 flex items-center justify-between">
+            {/* AC Power Chart */}
+            <div className="border border-border bg-card p-4 md:p-6">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground md:mb-6 md:text-sm">
+                AC Load Power (AC1 & AC2)
+              </h3>
+              <TimeSeriesChart dataKey="acPower" />
+            </div>
 
-              <div>
+            {/* Voltage Chart */}
+            <div className="border border-border bg-card p-4 md:p-6">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground md:mb-6 md:text-sm">
+                Voltage Readings
+              </h3>
+              <TimeSeriesChart dataKey="voltage" />
+            </div>
 
+            {/* Energy Chart */}
+            <div className="border border-border bg-card p-4 md:p-6">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground md:mb-6 md:text-sm">
+                Cumulative Energy
+              </h3>
+              <TimeSeriesChart dataKey="energy" />
+            </div>
+          </div>
+
+          {/* Raw Data Table */}
+          {mounted && historicalData.length > 0 && (
+            <div className="mt-6 border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  Voltage Trend
+                  Raw Data (Last 20 entries)
                 </h3>
-
-                <p className="text-xs text-muted-foreground">
-                  Battery Voltage Analytics
-                </p>
-
               </div>
-
-              <span className="text-sm font-bold text-blue-500">
-                Voltage (V)
-              </span>
-
-            </div>
-
-            <div className="h-[350px] w-full">
-
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-              >
-
-                <LineChart
-                  data={
-                    filteredHistory
-                  }
-                >
-
-                  <CartesianGrid strokeDasharray="3 3" />
-
-                  <XAxis
-                    dataKey="time"
-                    minTickGap={40}
-                    tick={{
-                      fontSize: 10,
-                    }}
-                  />
-
-                  <YAxis />
-
-                  <Tooltip
-                    labelFormatter={(
-                      value,
-                      payload
-                    ) =>
-                      payload?.[0]
-                        ?.payload
-                        ?.fullDate
-                    }
-                  />
-
-                  <Legend />
-
-                  <Line
-                    type="monotone"
-                    dataKey="voltage"
-                    name="Voltage (V)"
-                    stroke="#3b82f6"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-
-                </LineChart>
-
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* SOC GRAPH */}
-          <div className="mb-6 border border-border bg-card p-4 md:p-6">
-
-            <div className="mb-4 flex items-center justify-between">
-
-              <div>
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  State Of Charge
-                </h3>
-
-                <p className="text-xs text-muted-foreground">
-                  Battery Charge Monitoring
-                </p>
-
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th className="px-3 py-2 text-left font-medium">Time</th>
+                      <th className="px-3 py-2 text-right font-medium">DC V</th>
+                      <th className="px-3 py-2 text-right font-medium">DC I</th>
+                      <th className="px-3 py-2 text-right font-medium">DC P</th>
+                      <th className="px-3 py-2 text-right font-medium">AC1 V</th>
+                      <th className="px-3 py-2 text-right font-medium">AC1 P</th>
+                      <th className="px-3 py-2 text-right font-medium">AC2 V</th>
+                      <th className="px-3 py-2 text-right font-medium">AC2 P</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historicalData.slice(-20).reverse().map((row, i) => (
+                      <tr key={i} className="border-b border-border hover:bg-muted/30">
+                        <td className="px-3 py-2 font-mono">
+                          {new Date(row.timestamp).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false,
+                          })}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">{row.dcVoltage.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.dcCurrent.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.dcPower.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.ac1Voltage.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.ac1Power.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.ac2Voltage.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{row.ac2Power.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              <span className="text-sm font-bold text-green-500">
-                SOC (%)
-              </span>
-
             </div>
-
-            <div className="h-[350px] w-full">
-
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-              >
-
-                <LineChart
-                  data={
-                    filteredHistory
-                  }
-                >
-
-                  <CartesianGrid strokeDasharray="3 3" />
-
-                  <XAxis
-                    dataKey="time"
-                    minTickGap={40}
-                    tick={{
-                      fontSize: 10,
-                    }}
-                  />
-
-                  <YAxis domain={[0, 100]} />
-
-                  <Tooltip
-                    labelFormatter={(
-                      value,
-                      payload
-                    ) =>
-                      payload?.[0]
-                        ?.payload
-                        ?.fullDate
-                    }
-                  />
-
-                  <Legend />
-
-                  <Line
-                    type="monotone"
-                    dataKey="soc"
-                    name="SOC (%)"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-
-                </LineChart>
-
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* SOH GRAPH */}
-          <div className="border border-border bg-card p-4 md:p-6">
-
-            <div className="mb-4 flex items-center justify-between">
-
-              <div>
-
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  State Of Health
-                </h3>
-
-                <p className="text-xs text-muted-foreground">
-                  Battery Health Monitoring
-                </p>
-
-              </div>
-
-              <span className="text-sm font-bold text-yellow-500">
-                SOH (%)
-              </span>
-
-            </div>
-
-            <div className="h-[350px] w-full">
-
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-              >
-
-                <LineChart
-                  data={
-                    filteredHistory
-                  }
-                >
-
-                  <CartesianGrid strokeDasharray="3 3" />
-
-                  <XAxis
-                    dataKey="time"
-                    minTickGap={40}
-                    tick={{
-                      fontSize: 10,
-                    }}
-                  />
-
-                  <YAxis domain={[0, 100]} />
-
-                  <Tooltip
-                    labelFormatter={(
-                      value,
-                      payload
-                    ) =>
-                      payload?.[0]
-                        ?.payload
-                        ?.fullDate
-                    }
-                  />
-
-                  <Legend />
-
-                  <Line
-                    type="monotone"
-                    dataKey="soh"
-                    name="SOH (%)"
-                    stroke="#f59e0b"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-
-                </LineChart>
-
-              </ResponsiveContainer>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
-
-              <span>
-                Total Points:
-
-                <span className="ml-1 font-bold text-foreground">
-                  {
-                    filteredHistory.length
-                  }
-                </span>
-              </span>
-
-              <span>
-                Range:
-
-                <span className="ml-1 font-bold text-foreground">
-
-                  {
-                    timeRanges.find(
-                      (r) =>
-                        r.hours ===
-                        selectedRange
-                    )?.label
-                  }
-
-                </span>
-              </span>
-
-              <span>
-                Status:
-
-                <span className="ml-1 font-bold text-secondary">
-                  {
-                    loading
-                      ? "Loading..."
-                      : "Live"
-                  }
-                </span>
-              </span>
-
-            </div>
-          </div>
+          )}
         </div>
       </main>
     </div>

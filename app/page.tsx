@@ -1,423 +1,177 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import {
-  Battery,
-  Gauge,
-  Activity,
-  AlertTriangle,
-} from "lucide-react"
-
+import { Battery, Zap, Gauge, Activity, AlertTriangle, Plug, WifiOff } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { KPITile } from "@/components/dashboard/kpi-tile"
+import { EnergySankey } from "@/components/dashboard/energy-sankey"
 import { AlertsPanel } from "@/components/dashboard/alerts-panel"
 import { BatteryHealth } from "@/components/dashboard/battery-health"
-import { OptimizerLog } from "@/components/dashboard/optimizer-log"
+import { DataLogPanel } from "@/components/dashboard/data-log-panel"
 import { TimeSeriesChart } from "@/components/charts/time-series-chart"
-
+import { ConnectionStatus } from "@/components/dashboard/connection-status"
 import { useEnergyStore } from "@/lib/energy-store"
-import { mqttClient } from "@/lib/mqtt"
+import { useMqtt } from "@/hooks/use-mqtt"
+import { useThingSpeak } from "@/hooks/use-thingspeak"
 
 export default function DashboardPage() {
-
-  const {
-    alerts,
-    refreshData,
+  const { 
+    kpis, 
+    energyFlow, 
+    alerts, 
+    batteryData, 
+    lastKnownBatteryData,
+    connection,
   } = useEnergyStore()
-
-  const [isSidebarOpen, setIsSidebarOpen] =
-    useState(false)
-
-  const [batteryData, setBatteryData] =
-    useState<any>(null)
-
-  const [historyData, setHistoryData] =
-    useState<any[]>([])
-
-  const activeAlerts =
-    alerts.filter((a) => !a.acknowledged).length
+  
+  // Initialize MQTT connection for real-time data
+  useMqtt()
+  
+  // Initialize ThingSpeak for historical data
+  const { isLoading: tsLoading } = useThingSpeak(100)
+  
+  const activeAlerts = alerts.filter((a) => !a.acknowledged).length
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
 
-    refreshData()
+  const isOnline = connection.mqtt && batteryData !== null
 
-    const interval = setInterval(
-      refreshData,
-      5000
-    )
-
-    mqttClient.on(
-      "message",
-      (topic, message) => {
-
-        if (topic === "battery/data") {
-
-          try {
-
-            const data = JSON.parse(
-              message.toString()
-            )
-
-            console.log(
-              "Battery MQTT:",
-              data
-            )
-
-            setBatteryData(data)
-
-            setHistoryData((prev) => {
-
-              const updated = [
-                ...prev,
-                {
-                  time: new Date().toLocaleTimeString(),
-                  voltage: data.dc_voltage || 0,
-                  soc: data.soc || 0,
-                  soh: data.soh || 0,
-                  timestamp: Date.now(),
-                },
-              ]
-
-              // keep only last 10 mins
-              return updated.filter(
-                (item) =>
-                  Date.now() - item.timestamp <=
-                  10 * 60 * 1000
-              )
-            })
-
-          } catch (err) {
-
-            console.log(
-              "MQTT Parse Error:",
-              err
-            )
-          }
-        }
-      }
-    )
-
-    return () => {
-      clearInterval(interval)
-      mqttClient.removeAllListeners(
-        "message"
-      )
-    }
-
-  }, [refreshData])
-
-  // DC Data
-  const voltage =
-    batteryData?.dc_voltage || 0
-
-  const current =
-    batteryData?.dc_current || 0
-
-  const power =
-    batteryData?.dc_power || 0
-
-  const soc =
-    batteryData?.soc || 0
-
-  const soh =
-    batteryData?.soh || 0
-
-  // AC1 Data
-  const ac1Voltage =
-    batteryData?.ac1_voltage || 0
-
-  const ac1Current =
-    batteryData?.ac1_current || 0
-
-  const ac1Power =
-    batteryData?.ac1_power || 0
-
-  const ac1Frequency =
-    batteryData?.ac1_frequency || 0
-
-  const ac1PowerFactor =
-    batteryData?.ac1_power_factor || 0
-
-  // AC2 Data
-  const ac2Voltage =
-    batteryData?.ac2_voltage || 0
-
-  const ac2Current =
-    batteryData?.ac2_current || 0
-
-  const ac2Power =
-    batteryData?.ac2_power || 0
-
-  const ac2Frequency =
-    batteryData?.ac2_frequency || 0
-
-  const ac2PowerFactor =
-    batteryData?.ac2_power_factor || 0
+  // Helper to format values or show "-" when offline
+  const formatValue = (value: number | null, decimals: number = 1): string => {
+    if (value === null) return "-"
+    return value.toFixed(decimals)
+  }
 
   return (
     <div className="min-h-screen bg-background">
-
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={() =>
-          setIsSidebarOpen(false)
-        }
-      />
-
-      <Header
-        onMenuClick={() =>
-          setIsSidebarOpen(true)
-        }
-      />
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <Header onMenuClick={() => setIsSidebarOpen(true)} />
 
       <main className="pt-16 lg:ml-64">
-
         <div className="p-4 lg:p-6">
-
-          {/* Title */}
-          <div className="mb-4 lg:mb-6">
-
-            <h1 className="text-xl lg:text-2xl font-bold uppercase tracking-wider text-foreground">
-              System Overview
-            </h1>
-
-            <p className="text-xs lg:text-sm text-muted-foreground">
-              Real-time battery monitoring dashboard
-            </p>
-
+          {/* Page Title with Connection Status */}
+          <div className="mb-4 flex flex-col gap-2 lg:mb-6 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 className="text-xl font-bold uppercase tracking-wider text-foreground lg:text-2xl">
+                System Overview
+              </h1>
+              <p className="text-xs text-muted-foreground lg:text-sm">
+                {isOnline ? (
+                  <span className="flex items-center gap-1 text-secondary">
+                    Real-time hardware data via MQTT
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-destructive">
+                    <WifiOff className="h-3 w-3" />
+                    Hardware Offline - Waiting for connection
+                  </span>
+                )}
+              </p>
+            </div>
+            <ConnectionStatus />
           </div>
+
+          {/* Offline Banner */}
+          {!isOnline && mounted && (
+            <div className="mb-4 flex items-center gap-3 border border-destructive/50 bg-destructive/10 px-4 py-3 lg:mb-6">
+              <WifiOff className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="text-sm font-medium text-destructive">Hardware Not Connected</p>
+                <p className="text-xs text-muted-foreground">
+                  {connection.lastMqttMessage 
+                    ? `Last data received: ${new Date(connection.lastMqttMessage).toLocaleString()}`
+                    : "No data received yet. Start your Raspberry Pi with pzem_read.py to see live data."
+                  }
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* KPI Tiles */}
-          <div className="mb-4 lg:mb-6 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:gap-4">
-
-            {/* Voltage */}
-            <KPITile
-              title="DC Voltage"
-              value={voltage.toFixed(1)}
-              unit="V"
-              icon={Gauge}
-              trend="neutral"
-              trendValue="Live"
-              status="ok"
-            />
-
-            {/* Current */}
-            <KPITile
-              title="DC Current"
-              value={current.toFixed(1)}
-              unit="A"
-              icon={Activity}
-              trend="neutral"
-              trendValue="Live"
-              status="ok"
-            />
-
-            {/* Power */}
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:mb-6 lg:grid-cols-6 lg:gap-4">
             <KPITile
               title="DC Power"
-              value={power.toFixed(1)}
+              value={formatValue(kpis.dcPowerW)}
               unit="W"
+              icon={Battery}
+              trend={kpis.dcPowerW !== null && kpis.dcPowerW > 0 ? "up" : "neutral"}
+              status={!isOnline ? "offline" : kpis.dcPowerW !== null && kpis.dcPowerW > 0 ? "ok" : "warning"}
+            />
+            <KPITile
+              title="AC1 Power"
+              value={formatValue(kpis.ac1PowerW)}
+              unit="W"
+              icon={Zap}
+              trend="neutral"
+              trendValue={kpis.ac1Voltage !== null ? `${kpis.ac1Voltage.toFixed(0)}V` : undefined}
+              status={!isOnline ? "offline" : "ok"}
+            />
+            <KPITile
+              title="Battery SoC"
+              value={formatValue(kpis.batterySocPct, 0)}
+              unit="%"
+              icon={Gauge}
+              trend={kpis.batterySocPct !== null && kpis.batterySocPct > 50 ? "up" : "down"}
+              status={!isOnline ? "offline" : kpis.batterySocPct !== null && kpis.batterySocPct < 20 ? "critical" : kpis.batterySocPct !== null && kpis.batterySocPct < 40 ? "warning" : "ok"}
+            />
+            <KPITile
+              title="DC Voltage"
+              value={formatValue(kpis.dcVoltage, 2)}
+              unit="V"
               icon={Activity}
-              trend="neutral"
-              trendValue="Live"
-              status="ok"
+              trend={kpis.dcVoltage !== null && kpis.dcVoltage > 11.5 ? "up" : kpis.dcVoltage !== null && kpis.dcVoltage < 10.5 ? "down" : "neutral"}
+              trendValue="11.1V nom"
+              status={!isOnline ? "offline" : kpis.dcVoltage !== null && kpis.dcVoltage < 10.0 ? "critical" : kpis.dcVoltage !== null && kpis.dcVoltage < 10.5 ? "warning" : "ok"}
             />
-
-            {/* SOC */}
             <KPITile
-              title="Battery SOC"
-              value={soc.toFixed(1)}
-              unit="%"
-              icon={Battery}
-              trend={
-                soc > 50
-                  ? "up"
-                  : "down"
-              }
-              status={
-                soc < 20
-                  ? "critical"
-                  : soc < 40
-                    ? "warning"
-                    : "ok"
-              }
+              title="Power Source"
+              value={kpis.powerSource ?? "-"}
+              unit=""
+              icon={Plug}
+              status={!isOnline ? "offline" : "ok"}
             />
-
-            {/* SOH */}
             <KPITile
-              title="Battery SOH"
-              value={soh.toFixed(1)}
-              unit="%"
-              icon={Battery}
-              trend="neutral"
-              trendValue="Health"
-              status="ok"
+              title="Alerts"
+              value={activeAlerts.toString()}
+              unit="active"
+              icon={AlertTriangle}
+              status={activeAlerts > 3 ? "critical" : activeAlerts > 0 ? "warning" : "ok"}
             />
           </div>
 
-          {/* AC Monitoring Cards */}
-          <div className="mb-4 lg:mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-
-            {/* AC1 Card */}
-            <div className="rounded-xl border border-border bg-card p-5">
-
-              <h2 className="mb-4 text-lg font-bold">
-                AC1 Monitoring
-              </h2>
-
-              <div className="grid grid-cols-2 gap-4">
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Voltage
-                  </p>
-
-                  <p className="text-2xl font-semibold">
-                    {ac1Voltage.toFixed(1)} V
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Current
-                  </p>
-
-                  <p className="text-2xl font-semibold">
-                    {ac1Current.toFixed(2)} A
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Power
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac1Power.toFixed(1)} W
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Frequency
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac1Frequency.toFixed(1)} Hz
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Power Factor
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac1PowerFactor.toFixed(2)}
-                  </p>
-                </div>
-
-              </div>
-            </div>
-
-            {/* AC2 Card */}
-            <div className="rounded-xl border border-border bg-card p-5">
-
-              <h2 className="mb-4 text-lg font-bold">
-                AC2 Monitoring
-              </h2>
-
-              <div className="grid grid-cols-2 gap-4">
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Voltage
-                  </p>
-
-                  <p className="text-2xl font-semibold">
-                    {ac2Voltage.toFixed(1)} V
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Current
-                  </p>
-
-                  <p className="text-2xl font-semibold">
-                    {ac2Current.toFixed(2)} A
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Power
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac2Power.toFixed(1)} W
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Frequency
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac2Frequency.toFixed(1)} Hz
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase">
-                    Power Factor
-                  </p>
-
-                  <p className="text-xl font-medium">
-                    {ac2PowerFactor.toFixed(2)}
-                  </p>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-          {/* Main Layout */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
-
-            {/* Left */}
+            {/* Left Column - Charts */}
             <div className="space-y-4 lg:col-span-2 lg:space-y-6">
+              <EnergySankey flow={energyFlow} isOffline={!isOnline} />
 
-              {/* Graph */}
               <div className="border border-border bg-card p-4">
-
-                <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  SOC & Voltage Monitoring
+                <h3 className="mb-4 flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  <span>Power History (ThingSpeak)</span>
+                  {tsLoading && (
+                    <span className="text-[10px] font-normal text-muted-foreground">Loading...</span>
+                  )}
                 </h3>
-
-                <TimeSeriesChart
-                  historyData={historyData}
-                />
-
+                <TimeSeriesChart />
               </div>
             </div>
 
-            {/* Right */}
+            {/* Right Column - Panels */}
             <div className="space-y-4 lg:space-y-6">
-
               <AlertsPanel />
-
               <BatteryHealth
-                soc={soc}
-                soh={soh}
+                soc={kpis.batterySocPct}
+                soh={kpis.batterySohPct}
+                voltage={kpis.dcVoltage}
+                current={batteryData?.dc_current ?? lastKnownBatteryData?.dc_current ?? null}
+                health={batteryData?.health ?? lastKnownBatteryData?.health ?? null}
+                isOffline={!isOnline}
               />
-
-              <OptimizerLog
-                batteryData={batteryData}
-              />
-
+              <DataLogPanel />
             </div>
           </div>
         </div>

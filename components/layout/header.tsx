@@ -12,10 +12,13 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const { alerts, kpis } = useEnergyStore()
   const [isDark, setIsDark] = useState(true)
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
+  const [mounted, setMounted] = useState(false)
   const activeAlerts = alerts.filter((a) => !a.acknowledged).length
 
   useEffect(() => {
+    setMounted(true)
+    setCurrentTime(new Date())
     document.documentElement.classList.add("dark")
     const interval = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(interval)
@@ -36,26 +39,36 @@ export function Header({ onMenuClick }: HeaderProps) {
         {/* Status Indicators */}
         <div className="hidden items-center gap-6 md:flex">
           <div className="flex items-center gap-2">
-            <div className="h-2 w-2 animate-pulse bg-secondary" />
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">Live Feed</span>
+            <div className={`h-2 w-2 ${kpis.isConnected ? "animate-pulse bg-secondary" : "bg-destructive"}`} />
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">
+              {kpis.isConnected ? "Live Feed" : "Disconnected"}
+            </span>
           </div>
-          <div className="text-xs text-muted-foreground">
-            <span className="uppercase tracking-wide">Uptime:</span>{" "}
-            <span suppressHydrationWarning className="font-mono text-secondary">
-  {kpis.systemUptime.toFixed(1)}%
-</span>
-          </div>
+          {mounted && kpis.lastUpdate && (
+            <div className="text-xs text-muted-foreground">
+              <span className="uppercase tracking-wide">Last Update:</span>{" "}
+              <span className="font-mono text-secondary">
+                {new Date(kpis.lastUpdate).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Time Display */}
         <div className="font-mono text-base lg:text-2xl text-foreground tracking-wider">
-          <span className="hidden sm:inline">{currentTime.toLocaleTimeString("en-US", { hour12: false })}</span>
-          <span className="sm:hidden">
-            {currentTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
-          </span>
-          <span className="ml-2 text-xs lg:text-sm text-muted-foreground">
-            {currentTime.toLocaleDateString("en-US", { month: "short", day: "2-digit" })}
-          </span>
+          {mounted && currentTime ? (
+            <>
+              <span className="hidden sm:inline">{currentTime.toLocaleTimeString("en-US", { hour12: false })}</span>
+              <span className="sm:hidden">
+                {currentTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+              </span>
+              <span className="ml-2 text-xs lg:text-sm text-muted-foreground">
+                {currentTime.toLocaleDateString("en-US", { month: "short", day: "2-digit" })}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">--:--:--</span>
+          )}
         </div>
 
         {/* Actions */}

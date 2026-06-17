@@ -1,102 +1,188 @@
-// Node types and telemetry interfaces
-export type NodeType = "power" | "battery" | "pv"
+// Hardware data types matching your Python scripts
+
 export type AlertSeverity = "info" | "warning" | "critical"
 export type AlertType =
-  | "soiling"
-  | "high_temp"
   | "low_soc"
-  | "sensor_offline"
-  | "inverter_fault"
   | "low_voltage"
   | "overcurrent"
-  | "optimizer_action_failed"
+  | "high_power"
+  | "sensor_offline"
+  | "mqtt_disconnect"
+  | "thingspeak_error"
 
-export interface NodeMetadata {
-  nodeId: string
-  type: NodeType
-  location: string
-  phases?: number
-  lastSeen: string
-  firmwareVersion: string
-  batteryBMS?: string
-  status: "ok" | "warning" | "offline"
+export type PowerSource = "GRID" | "BATTERY" | "HYBRID"
+export type Priority = "HIGH_PRIORITY" | "MEDIUM_PRIORITY" | "LOW_PRIORITY" | "UNKNOWN"
+
+// Battery data from MQTT topic: battery/data
+export interface BatteryData {
+  dc_voltage: number    // DC voltage
+  dc_current: number    // DC current
+  dc_power: number      // DC power
+  soc: number           // State of Charge (%)
+  soh: number           // State of Health (%)
+  health: string        // "Good", "Moderate", "Low", "Critical"
+  timestamp: string     // ISO timestamp
 }
 
-export interface BaseTelemetry {
-  nodeId: string
-  type: NodeType
-  ts: string
-  seq: number
-  rssi: number
+// Power data from MQTT topic: battery/data (AC meters)
+export interface PowerData {
+  ac1_voltage: number     // PZEM AC Meter 1
+  ac1_current: number
+  ac1_power: number
+  ac1_frequency: number
+  ac1_pf: number          // Power Factor
+  ac2_voltage: number     // PZEM AC Meter 2
+  ac2_current: number
+  ac2_power: number
+  ac2_frequency: number
+  ac2_pf: number
+  priority: Priority
+  source: PowerSource
+  timestamp: string
 }
 
-export interface PowerTelemetry extends BaseTelemetry {
-  type: "power"
-  phase: number
-  voltage_v: number
-  current_a: number
-  active_power_w: number
-  apparent_power_va: number
-  energy_wh: number
-  power_factor: number
-  frequency_hz: number
-  node_batt_pct: number
+// MQTT payload structure from battery/data topic
+export interface MqttBatteryPayload {
+  dc_voltage: number
+  dc_current: number
+  dc_power: number
+  soc: number
+  soh: number
+  ac1_voltage: number
+  ac1_current: number
+  ac1_power: number
+  ac1_frequency: number
+  ac1_pf: number
+  ac2_voltage: number
+  ac2_current: number
+  ac2_power: number
+  ac2_frequency: number
+  ac2_pf: number
+  timestamp?: string
 }
 
-export interface BatteryTelemetry extends BaseTelemetry {
-  type: "battery"
-  voltage_v: number
-  current_a: number
-  soc_pct: number
-  temperature_c: number
-  cycle_count: number
-  capacity_ah_est: number
-  capacity_fade_pct: number
+// ThingSpeak AC Channel (3387437)
+// Fields: field1=voltage3, field2=voltage4, field3=current3, field4=current4, 
+//         field5=power3, field6=power4, field7=energy3, field8=energy4
+export interface ThingSpeakACEntry {
+  created_at: string
+  entry_id: number
+  field1: string | null  // voltage3 (AC1 voltage)
+  field2: string | null  // voltage4 (AC2 voltage)
+  field3: string | null  // current3 (AC1 current)
+  field4: string | null  // current4 (AC2 current)
+  field5: string | null  // power3 (AC1 power)
+  field6: string | null  // power4 (AC2 power)
+  field7: string | null  // energy3 (AC1 energy)
+  field8: string | null  // energy4 (AC2 energy)
 }
 
-export interface PVTelemetry extends BaseTelemetry {
-  type: "pv"
-  panel_temp_c: number
-  irradiance_w_m2: number
-  soiling_index: number
-  pv_power_w: number
+// ThingSpeak DC Channel (3387439)
+// Fields: field1=bvoltage, field2=svoltage, field3=bcurrent, field4=scurrent,
+//         field5=bpower, field6=spower, field7=benergy, field8=senergy
+export interface ThingSpeakDCEntry {
+  created_at: string
+  entry_id: number
+  field1: string | null  // bvoltage (battery voltage)
+  field2: string | null  // svoltage (solar voltage)
+  field3: string | null  // bcurrent (battery current)
+  field4: string | null  // scurrent (solar current)
+  field5: string | null  // bpower (battery power)
+  field6: string | null  // spower (solar power)
+  field7: string | null  // benergy (battery energy)
+  field8: string | null  // senergy (solar energy)
 }
 
-export type Telemetry = PowerTelemetry | BatteryTelemetry | PVTelemetry
+// Parsed historical data for charts (combined from both channels)
+export interface HistoricalDataPoint {
+  timestamp: string
+  // DC data
+  dcVoltage: number
+  dcCurrent: number
+  dcPower: number
+  dcEnergy: number
+  // Solar data (if available)
+  solarVoltage: number
+  solarCurrent: number
+  solarPower: number
+  solarEnergy: number
+  // AC1 data
+  ac1Voltage: number
+  ac1Current: number
+  ac1Power: number
+  ac1Energy: number
+  // AC2 data
+  ac2Voltage: number
+  ac2Current: number
+  ac2Power: number
+  ac2Energy: number
+  // Calculated
+  soc?: number
+  soh?: number
+}
 
+// Combined real-time data state
+export interface RealtimeData {
+  battery: BatteryData | null
+  power: PowerData | null
+  lastUpdate: string | null
+}
+
+// Alert interface
 export interface Alert {
   id: string
   type: AlertType
   severity: AlertSeverity
-  nodeId: string
   message: string
   timestamp: string
   acknowledged: boolean
-  recommendedAction: string
+  value?: number
 }
 
-export interface OptimizerDecision {
+// KPIs derived from hardware data (null when offline/no data)
+export interface KPIs {
+  dcPowerW: number | null
+  ac1PowerW: number | null
+  ac2PowerW: number | null
+  totalLoadW: number | null
+  batterySocPct: number | null
+  batterySohPct: number | null
+  dcVoltage: number | null
+  dcCurrent: number | null
+  ac1Voltage: number | null
+  ac1Frequency: number | null
+  ac1PowerFactor: number | null
+  powerSource: PowerSource | null
+  priority: Priority | null
+  isConnected: boolean
+  lastUpdate: string | null
+}
+
+// Energy flow for Sankey diagram
+export interface EnergyFlow {
+  batteryToAC1: number
+  batteryToAC2: number
+  gridToAC1: number
+  gridToAC2: number
+  totalGeneration: number
+  totalConsumption: number
+}
+
+// Connection status
+export interface ConnectionStatus {
+  mqtt: boolean
+  thingspeak: boolean
+  lastMqttMessage: string | null
+  lastThingSpeakFetch: string | null
+  mqttError: string | null
+  thingspeakError: string | null
+}
+
+// Data log entry for the data log panel
+export interface DataLogEntry {
   id: string
   timestamp: string
-  action: string
-  reason: string
-  confidence: number
-  status: "pending" | "accepted" | "rejected"
-}
-
-export interface KPIs {
-  pvPowerKw: number
-  totalLoadKw: number
-  batterySocPct: number
-  gridImportExportKw: number
-  systemUptime: number
-  activeAlerts: number
-}
-
-export interface EnergyFlow {
-  pvToLoad: number
-  pvToBattery: number
-  batteryToLoad: number
-  gridToSystem: number
-  systemToGrid: number
+  source: "mqtt" | "thingspeak"
+  topic?: string
+  data: BatteryData | PowerData | Record<string, unknown>
 }
