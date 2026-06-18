@@ -14,7 +14,7 @@ const layoutCandidates = [
 const layoutPath = layoutCandidates.find((candidate) => fs.existsSync(candidate))
 
 if (!layoutPath) {
-  console.warn('[built-with-v0] Could not find a Next.js root layout to patch')
+  console.warn('Could not find a Next.js root layout to patch')
   process.exit(0)
 }
 
@@ -30,7 +30,7 @@ if (anchor) {
   } else if (/<\/html>/i.test(contentWithoutExistingBadge)) {
     nextContent = contentWithoutExistingBadge.replace(/<\/html>/i, anchor + String.fromCharCode(10) + '</html>')
   } else {
-    console.warn('[built-with-v0] Could not inject the built with v0 button before </body> or </html>')
+    console.warn('Could not inject the built with v0 button before </body> or </html>')
   }
 }
 

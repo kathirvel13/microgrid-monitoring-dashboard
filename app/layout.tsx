@@ -20,7 +20,7 @@ const _sourceSerif_4 = V0_Font_Source_Serif_4({ subsets: ['latin'], weight: ["20
 export const metadata: Metadata = {
   title: "Smart Watts - Energy Monitoring System",
   description: "IoT-based Energy Monitoring & Optimization System for Solar Microgrids",
-  generator: "v0.app",
+  generator: "kathirvel13",
 }
 
 export const viewport: Viewport = {
