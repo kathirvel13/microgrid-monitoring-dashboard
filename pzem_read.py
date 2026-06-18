@@ -38,7 +38,7 @@ mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
 # THINGSPEAK CONFIG (UPDATED - SINGLE AC CHANNEL)
 # =========================================================
 THINGSPEAK_URL = "https://api.thingspeak.com/update"
-AC_WRITE_API = "4BEO7KIZI8ZJMTQH"
+AC_WRITE_API = "MZOA1SABJ88ZI00G"
 
 # =========================================================
 # ENERGY TRACKING (FOR THINGSPEAK)

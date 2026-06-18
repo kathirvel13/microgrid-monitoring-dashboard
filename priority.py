@@ -45,10 +45,10 @@ mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
 THINGSPEAK_URL = "https://api.thingspeak.com/update"
 
 # DC Channel (Battery & Solar)
-DC_WRITE_API = "2U42ZCXWAVVFZL9R"
+DC_WRITE_API = "4BEO7KIZI8ZJMTQH"
 
 # AC Channel (AC Meters)
-AC_WRITE_API = "4BEO7KIZI8ZJMTQH"
+AC_WRITE_API = "MZOA1SABJ88ZI00G"
 
 # =========================================================
 # ENERGY TRACKING (FOR THINGSPEAK)
@@ -128,21 +128,21 @@ def activate_priority(level):
 
     global active_slaves
 
-    print(f"⚡ Adjusting to level {level}")
+    print(f"Adjusting to level {level}")
 
     slaves = list(relay_map.keys())
     required_slaves = set(slaves[:level])
 
-    # 🔻 Turn OFF only extra loads
+    # Turn OFF only extra loads
     for slave in active_slaves - required_slaves:
-        print(f"🔻 OFF → Slave {slave}")
+        print(f"OFF → Slave {slave}")
         turn_off_all(slave)
 
-    # ➡️ Turn ON only new loads
+    # Turn ON only new loads
     for slave in required_slaves - active_slaves:
         relay = relay_map[slave]
 
-        print(f"➡️ ON → Slave {slave}, Relay {relay}")
+        print(f"ON → Slave {slave}, Relay {relay}")
 
         turn_off_all(slave)
         time.sleep(0.1)
@@ -270,12 +270,12 @@ def control_loads(soc):
         state = "CRITICAL"
 
     if level == last_level:
-        print("✅ No change")
+        print("No change")
         return
 
     last_level = level
 
-    print(f"⚡ {state}")
+    print(f"{state}")
 
     activate_priority(level)
 
@@ -407,7 +407,7 @@ def save_to_mysql(voltage, current, power, soc, soh, discharged_ah):
 # =========================================================
 # MAIN LOOP
 # =========================================================
-print("🚀 Smart Load Shedding System Started")
+print("Smart Load Shedding System Started")
 
 last_thingspeak = 0
 
@@ -439,20 +439,20 @@ while True:
     soh = previous_soh
 
     print(
-        f"🔋 V={voltage:.2f} | "
+        f"V={voltage:.2f} | "
         f"I={current:.2f} | "
         f"SOC={soc:.1f}% | "
         f"SOH={soh:.1f}%"
     )
     print(
-        f"⚡ AC1: {ac1_voltage:.1f}V | "
+        f"AC1: {ac1_voltage:.1f}V | "
         f"{ac1_current:.2f}A | "
         f"{ac1_power:.1f}W | "
         f"PF={ac1_pf:.2f}"
     )
 
     print(
-        f"⚡ AC2: {ac2_voltage:.1f}V | "
+        f"AC2: {ac2_voltage:.1f}V | "
         f"{ac2_current:.2f}A | "
         f"{ac2_power:.1f}W | "
         f"PF={ac2_pf:.2f}"
